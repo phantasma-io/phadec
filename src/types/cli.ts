@@ -5,6 +5,13 @@ export type VmDetailMode = 'all' | 'calls' | 'ops' | 'none';
 export type CarbonDetailMode = 'all' | 'call' | 'msg' | 'none';
 export type CarbonAddressMode = 'bytes32' | 'pha';
 export type RomDecodeMode = 'auto' | 'legacy' | 'crown';
+export type AddressInputKind =
+  | 'bytes32'
+  | 'pha'
+  | 'wif'
+  | 'private-key'
+  | 'mnemonic'
+  | 'mnemonic-legacy';
 
 export interface CliOptions {
   command: CliCommand;
@@ -32,6 +39,8 @@ export interface CliOptions {
   addressMnemonic?: string;
   addressLegacyMnemonic?: string;
   addressLegacyPassword?: string;
+  addressReadStdin: boolean;
+  addressStdinKind?: AddressInputKind;
   addressIndex: number;
 }
 

@@ -111,6 +111,84 @@ test('parses address mode with --mnemonic-legacy and legacy password', () => {
   assert.equal(parsed.options.addressLegacyPassword, 'TREZOR');
 });
 
+test('parses address mode with stdin selector before --stdin', () => {
+  const parsed = parseArgs(['address', '--wif', '--stdin']);
+  assert.equal(parsed.kind, 'ok');
+  if (parsed.kind !== 'ok') {
+    return;
+  }
+  assert.equal(parsed.options.command, 'address');
+  assert.equal(parsed.options.addressReadStdin, true);
+  assert.equal(parsed.options.addressStdinKind, 'wif');
+  assert.equal(parsed.options.addressWif, undefined);
+});
+
+test('parses address mode with --stdin before selector', () => {
+  const parsed = parseArgs([
+    'address',
+    '--stdin',
+    '--mnemonic',
+    '--index',
+    '3',
+  ]);
+  assert.equal(parsed.kind, 'ok');
+  if (parsed.kind !== 'ok') {
+    return;
+  }
+  assert.equal(parsed.options.command, 'address');
+  assert.equal(parsed.options.addressReadStdin, true);
+  assert.equal(parsed.options.addressStdinKind, 'mnemonic');
+  assert.equal(parsed.options.addressIndex, 3);
+  assert.equal(parsed.options.addressMnemonic, undefined);
+});
+
+test('parses address stdin legacy mnemonic with legacy password', () => {
+  const parsed = parseArgs([
+    'address',
+    '--stdin',
+    '--mnemonic-legacy',
+    '--legacy-password',
+    'TREZOR',
+  ]);
+  assert.equal(parsed.kind, 'ok');
+  if (parsed.kind !== 'ok') {
+    return;
+  }
+  assert.equal(parsed.options.addressReadStdin, true);
+  assert.equal(parsed.options.addressStdinKind, 'mnemonic-legacy');
+  assert.equal(parsed.options.addressLegacyPassword, 'TREZOR');
+});
+
+test('address stdin mode requires an input selector', () => {
+  const parsed = parseArgs(['address', '--stdin']);
+  assert.equal(parsed.kind, 'error');
+  if (parsed.kind !== 'error') {
+    return;
+  }
+  assert.match(parsed.message, /requires one input selector/);
+});
+
+test('address stdin mode rejects values mixed with stdin selector', () => {
+  const parsed = parseArgs(['address', '--stdin', '--wif=abc']);
+  assert.equal(parsed.kind, 'error');
+  if (parsed.kind !== 'error') {
+    return;
+  }
+  assert.match(
+    parsed.message,
+    /with --stdin does not accept address input values/
+  );
+});
+
+test('address stdin mode rejects multiple selectors', () => {
+  const parsed = parseArgs(['address', '--stdin', '--wif', '--mnemonic']);
+  assert.equal(parsed.kind, 'error');
+  if (parsed.kind !== 'error') {
+    return;
+  }
+  assert.match(parsed.message, /accepts only one stdin input selector/);
+});
+
 test('address mode rejects invalid derivation index', () => {
   const mnemonic =
     'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';

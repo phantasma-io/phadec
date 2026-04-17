@@ -6,6 +6,7 @@ import type {
   CarbonDetailMode,
   CarbonAddressMode,
   RomDecodeMode,
+  AddressInputKind,
 } from '../types/cli.js';
 import type { OutputFormat } from '../types/decoded.js';
 import { DomainSettings } from 'phantasma-sdk-ts';
@@ -109,6 +110,43 @@ function parseRomMode(value: string): RomDecodeMode | null {
     default:
       return null;
   }
+}
+
+function addressInputKindForFlag(key: string): AddressInputKind | null {
+  switch (key) {
+    case 'bytes32':
+    case 'carbon-address':
+      return 'bytes32';
+    case 'pha':
+    case 'pha-address':
+      return 'pha';
+    case 'wif':
+      return 'wif';
+    case 'private-key':
+    case 'private':
+    case 'hex-private-key':
+      return 'private-key';
+    case 'mnemonic':
+    case 'seed-phrase':
+      return 'mnemonic';
+    case 'mnemonic-legacy':
+    case 'legacy-mnemonic':
+      return 'mnemonic-legacy';
+    default:
+      return null;
+  }
+}
+
+function setAddressStdinKind(opts: CliOptions, key: string): string | null {
+  const kind = addressInputKindForFlag(key);
+  if (!kind) {
+    return `unknown stdin address input selector: --${key}`;
+  }
+  if (opts.addressStdinKind && opts.addressStdinKind !== kind) {
+    return 'address mode accepts only one stdin input selector';
+  }
+  opts.addressStdinKind = kind;
+  return null;
 }
 
 function setFlagValue(
@@ -242,6 +280,13 @@ function setFlagValue(
 }
 
 function validateOptions(opts: CliOptions): string | null {
+  if (
+    opts.command !== 'address' &&
+    (opts.addressReadStdin || opts.addressStdinKind)
+  ) {
+    return '--stdin address input selectors are only supported in address mode';
+  }
+
   if (opts.command === 'tx') {
     if (!opts.txHex && !opts.txHash) {
       return 'tx mode requires --hex <txHex> or --hash <txHash>';
@@ -258,7 +303,7 @@ function validateOptions(opts: CliOptions): string | null {
       return 'rom mode requires --hex <romHex>';
     }
   } else if (opts.command === 'address') {
-    const inputCount = [
+    const valueInputCount = [
       opts.addressBytes32,
       opts.addressPha,
       opts.addressWif,
@@ -266,6 +311,17 @@ function validateOptions(opts: CliOptions): string | null {
       opts.addressMnemonic,
       opts.addressLegacyMnemonic,
     ].filter(Boolean).length;
+
+    if (opts.addressReadStdin) {
+      if (valueInputCount > 0) {
+        return 'address mode with --stdin does not accept address input values';
+      }
+      if (!opts.addressStdinKind) {
+        return 'address mode with --stdin requires one input selector: --bytes32, --pha, --wif, --private-key, --mnemonic, or --mnemonic-legacy';
+      }
+    }
+
+    const inputCount = valueInputCount + (opts.addressStdinKind ? 1 : 0);
     if (inputCount === 0) {
       return 'address mode requires --bytes32 <hex>, --pha <address>, --wif <wif>, --private-key <hex>, --mnemonic <words>, or --mnemonic-legacy <words>';
     }
@@ -305,6 +361,7 @@ export function parseArgs(argv: string[]): ParseResult {
       carbonAddresses: DEFAULT_CARBON_ADDRESSES,
       romMode: DEFAULT_ROM_MODE,
       protocolVersion: DEFAULT_PROTOCOL_VERSION,
+      addressReadStdin: false,
       addressIndex: DEFAULT_ADDRESS_INDEX,
       txHex: firstArg,
     };
@@ -333,8 +390,10 @@ export function parseArgs(argv: string[]): ParseResult {
     carbonAddresses: DEFAULT_CARBON_ADDRESSES,
     romMode: DEFAULT_ROM_MODE,
     protocolVersion: DEFAULT_PROTOCOL_VERSION,
+    addressReadStdin: false,
     addressIndex: DEFAULT_ADDRESS_INDEX,
   };
+  const hasStdinFlag = argv.includes('--stdin');
 
   while (index < argv.length) {
     const token = argv[index];
@@ -355,6 +414,12 @@ export function parseArgs(argv: string[]): ParseResult {
       continue;
     }
 
+    if (token === '--stdin') {
+      opts.addressReadStdin = true;
+      index += 1;
+      continue;
+    }
+
     if (!token.startsWith('--')) {
       return { kind: 'error', message: `unexpected argument: ${token}` };
     }
@@ -366,6 +431,15 @@ export function parseArgs(argv: string[]): ParseResult {
     }
     if (rawValue !== undefined) {
       const err = setFlagValue(opts, rawKey, rawValue);
+      if (err) {
+        return { kind: 'error', message: err };
+      }
+      index += 1;
+      continue;
+    }
+
+    if (hasStdinFlag && addressInputKindForFlag(rawKey)) {
+      const err = setAddressStdinKind(opts, rawKey);
       if (err) {
         return { kind: 'error', message: err };
       }
@@ -405,6 +479,7 @@ export function printHelp(): void {
   pha-decode address --private-key <hex>
   pha-decode address --mnemonic "<12-or-24-word phrase>" [--index <n>]
   pha-decode address --mnemonic-legacy "<old seed phrase>" [--legacy-password <password>]
+  printf '%s' "<secret>" | pha-decode address --stdin --wif
 
 Options:
   --format <json|pretty>  Output format (default: pretty)
@@ -429,6 +504,9 @@ Options:
   --seed-phrase <words>   Alias for --mnemonic
   --mnemonic-legacy <w>   Legacy Poltergeist seed phrase (used by address mode; redacted in output)
   --legacy-password <p>   Optional legacy seed password for --mnemonic-legacy (redacted in output)
+  --stdin                 Read selected address input from stdin; use with --wif, --private-key,
+                          --mnemonic, --mnemonic-legacy, --bytes32, or --pha as a selector
+                          In an interactive terminal, type one line and press Enter.
   --index <n>             Address derivation index for --mnemonic (default: 0)
   --help                  Show this help
 

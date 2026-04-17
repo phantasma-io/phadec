@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
+import { createInterface } from 'node:readline/promises';
 import { parseArgs, printHelp } from './args.js';
 import { decodeTxHex, decodeTxHash } from '../decoders/tx.js';
 import { decodeEventHex } from '../decoders/event.js';
@@ -12,7 +13,13 @@ import type { AbiMethodSpecEntry } from '../abi/loader.js';
 import { buildBuiltinMethodTable } from '../abi/builtin/index.js';
 import { fetchContracts } from '../rpc/phantasma.js';
 import type { DecodeOutput } from '../types/decoded.js';
-import type { VmDetailMode, CarbonDetailMode } from '../types/cli.js';
+import type {
+  AddressInputKind,
+  CliOptions,
+  VmDetailMode,
+  CarbonDetailMode,
+} from '../types/cli.js';
+import type { AddressDecodeOptions } from '../decoders/address.js';
 import { bytesToHex, hexToBytes, setLogger } from 'phantasma-sdk-ts';
 
 const require = createRequire(import.meta.url);
@@ -59,20 +66,113 @@ function applyCarbonDetail(output: DecodeOutput, mode: CarbonDetailMode): void {
   }
 }
 
-function isSecretAddressInput(opts: {
-  addressWif?: string;
-  addressPrivateKey?: string;
-  addressMnemonic?: string;
-  addressLegacyMnemonic?: string;
-  addressLegacyPassword?: string;
-}): boolean {
+function isSecretAddressKind(kind: AddressInputKind | undefined): boolean {
+  return (
+    kind === 'wif' ||
+    kind === 'private-key' ||
+    kind === 'mnemonic' ||
+    kind === 'mnemonic-legacy'
+  );
+}
+
+function isSecretAddressInput(opts: CliOptions): boolean {
   return Boolean(
     opts.addressWif ||
     opts.addressPrivateKey ||
     opts.addressMnemonic ||
     opts.addressLegacyMnemonic ||
-    opts.addressLegacyPassword
+    opts.addressLegacyPassword ||
+    (opts.addressReadStdin && isSecretAddressKind(opts.addressStdinKind))
   );
+}
+
+function addressInputPrompt(kind: AddressInputKind | undefined): string {
+  switch (kind) {
+    case 'bytes32':
+      return 'Enter bytes32 address: ';
+    case 'pha':
+      return 'Enter Phantasma address: ';
+    case 'wif':
+      return 'Enter WIF: ';
+    case 'private-key':
+      return 'Enter private key hex: ';
+    case 'mnemonic':
+      return 'Enter mnemonic: ';
+    case 'mnemonic-legacy':
+      return 'Enter legacy mnemonic: ';
+    default:
+      return 'Enter address input: ';
+  }
+}
+
+async function readStdinText(
+  kind: AddressInputKind | undefined
+): Promise<string> {
+  if (process.stdin.isTTY) {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
+
+    try {
+      return (await rl.question(addressInputPrompt(kind))).trim();
+    } finally {
+      rl.close();
+    }
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+function buildAddressDecodeOptions(
+  opts: CliOptions,
+  stdinValue?: string
+): AddressDecodeOptions {
+  if (!opts.addressReadStdin) {
+    return {
+      ...(opts.addressBytes32 ? { bytes32: opts.addressBytes32 } : {}),
+      ...(opts.addressPha ? { phantasma: opts.addressPha } : {}),
+      ...(opts.addressWif ? { wif: opts.addressWif } : {}),
+      ...(opts.addressPrivateKey ? { privateKey: opts.addressPrivateKey } : {}),
+      ...(opts.addressMnemonic
+        ? { mnemonic: opts.addressMnemonic, index: opts.addressIndex }
+        : {}),
+      ...(opts.addressLegacyMnemonic
+        ? {
+            legacyMnemonic: opts.addressLegacyMnemonic,
+            legacyPassword: opts.addressLegacyPassword ?? '',
+          }
+        : {}),
+    };
+  }
+
+  if (stdinValue === undefined) {
+    throw new Error('stdin address input was not read');
+  }
+
+  switch (opts.addressStdinKind) {
+    case 'bytes32':
+      return { bytes32: stdinValue };
+    case 'pha':
+      return { phantasma: stdinValue };
+    case 'wif':
+      return { wif: stdinValue };
+    case 'private-key':
+      return { privateKey: stdinValue };
+    case 'mnemonic':
+      return { mnemonic: stdinValue, index: opts.addressIndex };
+    case 'mnemonic-legacy':
+      return {
+        legacyMnemonic: stdinValue,
+        legacyPassword: opts.addressLegacyPassword ?? '',
+      };
+    default:
+      throw new Error('address mode with --stdin requires an input selector');
+  }
 }
 
 async function run(): Promise<void> {
@@ -176,12 +276,20 @@ async function run(): Promise<void> {
     if (opts.romTokenId) {
       preWarnings.push('--token-id is ignored for address mode');
     }
-    if (opts.addressIndex !== 0 && !opts.addressMnemonic) {
+    if (
+      opts.addressIndex !== 0 &&
+      !opts.addressMnemonic &&
+      !(opts.addressReadStdin && opts.addressStdinKind === 'mnemonic')
+    ) {
       preWarnings.push(
         '--index is ignored unless --mnemonic or --seed-phrase is used'
       );
     }
-    if (opts.addressLegacyPassword && !opts.addressLegacyMnemonic) {
+    if (
+      opts.addressLegacyPassword &&
+      !opts.addressLegacyMnemonic &&
+      !(opts.addressReadStdin && opts.addressStdinKind === 'mnemonic-legacy')
+    ) {
       preWarnings.push(
         '--legacy-password is ignored unless --mnemonic-legacy is used'
       );
@@ -289,23 +397,12 @@ async function run(): Promise<void> {
 
   if (opts.command === 'address') {
     try {
-      const conversion = decodeAddressConversion({
-        ...(opts.addressBytes32 ? { bytes32: opts.addressBytes32 } : {}),
-        ...(opts.addressPha ? { phantasma: opts.addressPha } : {}),
-        ...(opts.addressWif ? { wif: opts.addressWif } : {}),
-        ...(opts.addressPrivateKey
-          ? { privateKey: opts.addressPrivateKey }
-          : {}),
-        ...(opts.addressMnemonic
-          ? { mnemonic: opts.addressMnemonic, index: opts.addressIndex }
-          : {}),
-        ...(opts.addressLegacyMnemonic
-          ? {
-              legacyMnemonic: opts.addressLegacyMnemonic,
-              legacyPassword: opts.addressLegacyPassword ?? '',
-            }
-          : {}),
-      });
+      const stdinValue = opts.addressReadStdin
+        ? await readStdinText(opts.addressStdinKind)
+        : undefined;
+      const conversion = decodeAddressConversion(
+        buildAddressDecodeOptions(opts, stdinValue)
+      );
       const secretInput = isSecretAddressInput(opts);
 
       const rendered = renderOutput({
