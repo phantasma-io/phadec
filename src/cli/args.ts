@@ -16,9 +16,15 @@ const DEFAULT_CARBON_DETAIL: CarbonDetailMode = 'call';
 const DEFAULT_CARBON_ADDRESSES: CarbonAddressMode = 'bytes32';
 const DEFAULT_ROM_MODE: RomDecodeMode = 'auto';
 const DEFAULT_PROTOCOL_VERSION = DomainSettings.LatestKnownProtocol;
+const DEFAULT_ADDRESS_INDEX = 0;
 
 function isCommand(value: string): value is CliCommand {
-  return value === 'tx' || value === 'event' || value === 'rom' || value === 'address';
+  return (
+    value === 'tx' ||
+    value === 'event' ||
+    value === 'rom' ||
+    value === 'address'
+  );
 }
 
 function parseFormat(value: string): OutputFormat | null {
@@ -78,6 +84,14 @@ function parseCarbonAddresses(value: string): CarbonAddressMode | null {
 function parseProtocol(value: string): number | null {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function parseAddressIndex(value: string): number | null {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 0x7fffffff) {
     return null;
   }
   return parsed;
@@ -143,6 +157,35 @@ function setFlagValue(
     case 'pha-address':
       opts.addressPha = value;
       return null;
+    case 'wif':
+      opts.addressWif = value;
+      return null;
+    case 'private-key':
+    case 'private':
+    case 'hex-private-key':
+      opts.addressPrivateKey = value;
+      return null;
+    case 'mnemonic':
+    case 'seed-phrase':
+      opts.addressMnemonic = value;
+      return null;
+    case 'mnemonic-legacy':
+    case 'legacy-mnemonic':
+      opts.addressLegacyMnemonic = value;
+      return null;
+    case 'legacy-password':
+    case 'mnemonic-legacy-password':
+      opts.addressLegacyPassword = value;
+      return null;
+    case 'index':
+    case 'derivation-index': {
+      const index = parseAddressIndex(value);
+      if (index === null) {
+        return `invalid address derivation index: ${value}`;
+      }
+      opts.addressIndex = index;
+      return null;
+    }
     case 'rom-format':
     case 'rom-mode': {
       const romMode = parseRomMode(value);
@@ -215,13 +258,19 @@ function validateOptions(opts: CliOptions): string | null {
       return 'rom mode requires --hex <romHex>';
     }
   } else if (opts.command === 'address') {
-    const hasBytes32 = Boolean(opts.addressBytes32);
-    const hasPha = Boolean(opts.addressPha);
-    if (!hasBytes32 && !hasPha) {
-      return 'address mode requires --bytes32 <hex> or --pha <address>';
+    const inputCount = [
+      opts.addressBytes32,
+      opts.addressPha,
+      opts.addressWif,
+      opts.addressPrivateKey,
+      opts.addressMnemonic,
+      opts.addressLegacyMnemonic,
+    ].filter(Boolean).length;
+    if (inputCount === 0) {
+      return 'address mode requires --bytes32 <hex>, --pha <address>, --wif <wif>, --private-key <hex>, --mnemonic <words>, or --mnemonic-legacy <words>';
     }
-    if (hasBytes32 && hasPha) {
-      return 'address mode accepts only one of --bytes32 or --pha';
+    if (inputCount > 1) {
+      return 'address mode accepts only one address input';
     }
   }
   return null;
@@ -240,7 +289,12 @@ export function parseArgs(argv: string[]): ParseResult {
   const hasExplicitCommand = Boolean(firstArg && isCommand(firstArg));
 
   // Shorthand: no explicit command, single arg => tx hex
-  if (!hasExplicitCommand && argv.length === 1 && firstArg && !firstArg.startsWith('-')) {
+  if (
+    !hasExplicitCommand &&
+    argv.length === 1 &&
+    firstArg &&
+    !firstArg.startsWith('-')
+  ) {
     const opts: CliOptions = {
       command: 'tx',
       format: DEFAULT_FORMAT,
@@ -251,6 +305,7 @@ export function parseArgs(argv: string[]): ParseResult {
       carbonAddresses: DEFAULT_CARBON_ADDRESSES,
       romMode: DEFAULT_ROM_MODE,
       protocolVersion: DEFAULT_PROTOCOL_VERSION,
+      addressIndex: DEFAULT_ADDRESS_INDEX,
       txHex: firstArg,
     };
     const err = validateOptions(opts);
@@ -278,6 +333,7 @@ export function parseArgs(argv: string[]): ParseResult {
     carbonAddresses: DEFAULT_CARBON_ADDRESSES,
     romMode: DEFAULT_ROM_MODE,
     protocolVersion: DEFAULT_PROTOCOL_VERSION,
+    addressIndex: DEFAULT_ADDRESS_INDEX,
   };
 
   while (index < argv.length) {
@@ -345,6 +401,10 @@ export function printHelp(): void {
   pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
   pha-decode address --bytes32 <hex>
   pha-decode address --pha <address>
+  pha-decode address --wif <wif>
+  pha-decode address --private-key <hex>
+  pha-decode address --mnemonic "<12-or-24-word phrase>" [--index <n>]
+  pha-decode address --mnemonic-legacy "<old seed phrase>" [--legacy-password <password>]
 
 Options:
   --format <json|pretty>  Output format (default: pretty)
@@ -363,6 +423,13 @@ Options:
   --rom-format <mode>     ROM parser mode: auto|legacy|crown (default: auto)
   --bytes32 <hex>         Carbon bytes32 address input (used by address mode)
   --pha <address>         Phantasma address input (used by address mode)
+  --wif <wif>             WIF private-key input (used by address mode; redacted in output)
+  --private-key <hex>     32-byte hex private-key input (used by address mode; redacted in output)
+  --mnemonic <words>      12/24-word BIP39 seed phrase (used by address mode; redacted in output)
+  --seed-phrase <words>   Alias for --mnemonic
+  --mnemonic-legacy <w>   Legacy Poltergeist seed phrase (used by address mode; redacted in output)
+  --legacy-password <p>   Optional legacy seed password for --mnemonic-legacy (redacted in output)
+  --index <n>             Address derivation index for --mnemonic (default: 0)
   --help                  Show this help
 
 Tx input notes:

@@ -1,6 +1,6 @@
 {
   "name": "pha-decode",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Phantasma transaction, contract, ROM, and event decoder CLI",
   "type": "module",
   "bin": {
@@ -29,6 +29,9 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "phantasma-sdk-ts": "^0.7.0"
+    "bip32": "^3.1.0",
+    "bip39": "^3.1.0",
+    "phantasma-sdk-ts": "^0.7.0",
+    "tiny-secp256k1": "^2.2.4"
   }
 }

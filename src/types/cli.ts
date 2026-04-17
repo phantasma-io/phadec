@@ -27,6 +27,12 @@ export interface CliOptions {
   romTokenId?: string;
   addressBytes32?: string;
   addressPha?: string;
+  addressWif?: string;
+  addressPrivateKey?: string;
+  addressMnemonic?: string;
+  addressLegacyMnemonic?: string;
+  addressLegacyPassword?: string;
+  addressIndex: number;
 }
 
 export type ParseResult =

@@ -59,6 +59,22 @@ function applyCarbonDetail(output: DecodeOutput, mode: CarbonDetailMode): void {
   }
 }
 
+function isSecretAddressInput(opts: {
+  addressWif?: string;
+  addressPrivateKey?: string;
+  addressMnemonic?: string;
+  addressLegacyMnemonic?: string;
+  addressLegacyPassword?: string;
+}): boolean {
+  return Boolean(
+    opts.addressWif ||
+    opts.addressPrivateKey ||
+    opts.addressMnemonic ||
+    opts.addressLegacyMnemonic ||
+    opts.addressLegacyPassword
+  );
+}
+
 async function run(): Promise<void> {
   const rawArgs = process.argv.slice(2);
   if (rawArgs.includes('--version') || rawArgs.includes('-v')) {
@@ -160,6 +176,16 @@ async function run(): Promise<void> {
     if (opts.romTokenId) {
       preWarnings.push('--token-id is ignored for address mode');
     }
+    if (opts.addressIndex !== 0 && !opts.addressMnemonic) {
+      preWarnings.push(
+        '--index is ignored unless --mnemonic or --seed-phrase is used'
+      );
+    }
+    if (opts.addressLegacyPassword && !opts.addressLegacyMnemonic) {
+      preWarnings.push(
+        '--legacy-password is ignored unless --mnemonic-legacy is used'
+      );
+    }
   } else {
     const table = buildBuiltinMethodTable(opts.protocolVersion);
     methodTable = table;
@@ -199,7 +225,6 @@ async function run(): Promise<void> {
         return;
       }
     }
-
   }
 
   if (opts.command === 'event') {
@@ -267,13 +292,29 @@ async function run(): Promise<void> {
       const conversion = decodeAddressConversion({
         ...(opts.addressBytes32 ? { bytes32: opts.addressBytes32 } : {}),
         ...(opts.addressPha ? { phantasma: opts.addressPha } : {}),
+        ...(opts.addressWif ? { wif: opts.addressWif } : {}),
+        ...(opts.addressPrivateKey
+          ? { privateKey: opts.addressPrivateKey }
+          : {}),
+        ...(opts.addressMnemonic
+          ? { mnemonic: opts.addressMnemonic, index: opts.addressIndex }
+          : {}),
+        ...(opts.addressLegacyMnemonic
+          ? {
+              legacyMnemonic: opts.addressLegacyMnemonic,
+              legacyPassword: opts.addressLegacyPassword ?? '',
+            }
+          : {}),
       });
+      const secretInput = isSecretAddressInput(opts);
 
       const rendered = renderOutput({
-        source: 'address-convert',
-        input: conversion.decoded.direction === 'bytes32-to-pha'
-          ? conversion.decoded.bytes32
-          : conversion.decoded.phantasma,
+        source: secretInput ? 'address-derive' : 'address-convert',
+        input: secretInput
+          ? '<redacted>'
+          : conversion.decoded.direction === 'bytes32-to-pha'
+            ? (conversion.decoded.bytes32 ?? '')
+            : conversion.decoded.phantasma,
         format: opts.format,
         address: conversion.decoded,
         warnings: [...preWarnings, ...conversion.warnings],
@@ -282,8 +323,12 @@ async function run(): Promise<void> {
       console.log(rendered);
     } catch (err) {
       const rendered = renderOutput({
-        source: 'address-convert',
-        input: opts.addressBytes32 ?? opts.addressPha ?? '',
+        source: isSecretAddressInput(opts)
+          ? 'address-derive'
+          : 'address-convert',
+        input: isSecretAddressInput(opts)
+          ? '<redacted>'
+          : (opts.addressBytes32 ?? opts.addressPha ?? ''),
         format: opts.format,
         warnings: preWarnings,
         errors: [err instanceof Error ? err.message : String(err)],
@@ -295,8 +340,15 @@ async function run(): Promise<void> {
   }
 
   if (opts.txHex) {
-    const output = decodeTxHex(opts.txHex, opts.format, methodTable, opts.protocolVersion);
-    output.warnings.push(...applyCarbonAddressMode(output, opts.carbonAddresses));
+    const output = decodeTxHex(
+      opts.txHex,
+      opts.format,
+      methodTable,
+      opts.protocolVersion
+    );
+    output.warnings.push(
+      ...applyCarbonAddressMode(output, opts.carbonAddresses)
+    );
     applyVmDetail(output, opts.vmDetail);
     applyCarbonDetail(output, opts.carbonDetail);
     output.warnings.push(...preWarnings);
@@ -317,7 +369,9 @@ async function run(): Promise<void> {
       methodTable,
       opts.protocolVersion
     );
-    output.warnings.push(...applyCarbonAddressMode(output, opts.carbonAddresses));
+    output.warnings.push(
+      ...applyCarbonAddressMode(output, opts.carbonAddresses)
+    );
     applyVmDetail(output, opts.vmDetail);
     applyCarbonDetail(output, opts.carbonDetail);
     output.warnings.push(...preWarnings);

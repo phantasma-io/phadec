@@ -1,5 +1,11 @@
 export type OutputFormat = 'json' | 'pretty';
-export type DecodeSourceKind = 'tx-hex' | 'tx-hash' | 'event-hex' | 'rom-hex' | 'address-convert';
+export type DecodeSourceKind =
+  | 'tx-hex'
+  | 'tx-hash'
+  | 'event-hex'
+  | 'rom-hex'
+  | 'address-convert'
+  | 'address-derive';
 
 export type JsonValue =
   | string
@@ -129,10 +135,21 @@ export interface RomDecoded {
 }
 
 export interface AddressDecoded {
-  direction: 'bytes32-to-pha' | 'pha-to-bytes32';
-  bytes32: string;
+  direction:
+    | 'bytes32-to-pha'
+    | 'pha-to-bytes32'
+    | 'wif-to-pha'
+    | 'private-key-to-pha'
+    | 'mnemonic-to-pha'
+    | 'mnemonic-legacy-to-pha';
+  bytes32?: string;
   phantasma: string;
   kind: 'user' | 'system';
+  publicKey?: string;
+  derivationMethod?: 'bip44' | 'legacy-pbkdf2-first32';
+  derivationPath?: string;
+  derivationIndex?: number;
+  legacyPasswordUsed?: boolean;
 }
 
 export interface DecodeOutput {

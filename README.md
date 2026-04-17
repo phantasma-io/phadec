@@ -19,6 +19,7 @@ CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts,
   - legacy/common VM dictionary format
   - dedicated `CROWN` format
 - Convert Carbon `bytes32` addresses to Phantasma addresses and back
+- Derive Phantasma addresses from WIF, 32-byte private keys, modern BIP44 seed phrases, or legacy Poltergeist seed phrases
 - Render stable JSON or human-readable pretty output
 - Merge ABI from local files or from RPC contract discovery
 
@@ -51,6 +52,10 @@ pha-decode event --hex <eventHex> [--kind <kind>]
 pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
 pha-decode address --bytes32 <hex>
 pha-decode address --pha <address>
+pha-decode address --wif <wif>
+pha-decode address --private-key <hex>
+pha-decode address --mnemonic "<12-or-24-word phrase>" [--index <n>]
+pha-decode address --mnemonic-legacy "<old seed phrase>" [--legacy-password <password>]
 ```
 
 ## Common Options
@@ -78,6 +83,12 @@ Mode-specific flags:
 - address mode
   - `--bytes32 <hex>`
   - `--pha <address>`
+  - `--wif <wif>`
+  - `--private-key <hex>`
+  - `--mnemonic <words>` / `--seed-phrase <words>`
+  - `--mnemonic-legacy <words>` / `--legacy-mnemonic <words>`
+  - `--legacy-password <password>` / `--mnemonic-legacy-password <password>`
+  - `--index <n>` / `--derivation-index <n>` for seed phrase derivation, default `0`
 
 ## Transaction Input Expectations
 
@@ -184,6 +195,46 @@ Convert a Phantasma address back to Carbon `bytes32`:
 pha-decode address --pha P2KKzrLNZK75f4Vtp4wwWocfgoqywBo3zKBWxBXjLgbxXmL
 ```
 
+Derive a Phantasma address from WIF:
+
+```bash
+pha-decode address --wif <WIF>
+```
+
+Derive a Phantasma address from a 32-byte private key hex:
+
+```bash
+pha-decode address --private-key <64_HEX_CHARS>
+```
+
+Derive a Phantasma address from a 12/24-word seed phrase:
+
+```bash
+pha-decode address --mnemonic "<seed phrase>" --index 0
+```
+
+Seed phrases use the same derivation path as current Poltergeist wallets:
+`m/44'/60'/0'/0/<index>`.
+
+Derive a Phantasma address from an old Poltergeist legacy seed phrase:
+
+```bash
+pha-decode address --mnemonic-legacy "<old seed phrase>"
+```
+
+For Poltergeist v1.0-v1.2 wallets that used a seed password:
+
+```bash
+pha-decode address --mnemonic-legacy "<old seed phrase>" --legacy-password "<seed password>"
+```
+
+Legacy seed phrases use the old Poltergeist algorithm:
+`PBKDF2-HMAC-SHA512(seedPhrase, "mnemonic" + password)` and the first 32 bytes
+as the Phantasma private key. They do not use the modern BIP44 derivation path.
+WIF, private-key, mnemonic, legacy mnemonic, and legacy password inputs are
+redacted from CLI output; prefer passing secrets through a non-persistent shell
+context.
+
 ## Output Shape
 
 JSON output is stable and machine-friendly:
@@ -211,6 +262,7 @@ Notes:
 - `--carbon-addresses pha` only converts known address-shaped Carbon fields
 - event hex decoding applies to classic event payloads only
 - ROM auto mode chooses a parser from the available context and falls back with warnings when needed
+- address derivation from WIF/private-key/mnemonic/legacy mnemonic never prints the secret input back into `input`
 
 ## Dev Shortcuts
 

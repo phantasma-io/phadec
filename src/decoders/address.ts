@@ -1,87 +1,38 @@
 import {
-  Address,
-  AddressKind,
-  bytesToHex,
-  hexToBytes,
-} from 'phantasma-sdk-ts';
-import type { AddressDecoded } from '../types/decoded.js';
-
-const CARBON_SYSTEM_PREFIX_ZERO_BYTES = 15;
+  bytes32ToPhantasmaAddress,
+  phantasmaAddressToBytes32,
+} from './address/conversion.js';
+import { legacyMnemonicToPhantasmaAddress } from './address/legacy.js';
+import {
+  mnemonicToPhantasmaAddress,
+  privateKeyHexToPhantasmaAddress,
+  wifToPhantasmaAddress,
+} from './address/modern.js';
+export type { AddressDecodeResult } from './address/shared.js';
 
 export interface AddressDecodeOptions {
   bytes32?: string;
   phantasma?: string;
+  wif?: string;
+  privateKey?: string;
+  mnemonic?: string;
+  legacyMnemonic?: string;
+  legacyPassword?: string;
+  index?: number;
 }
 
-export interface AddressDecodeResult {
-  decoded: AddressDecoded;
-  warnings: string[];
-}
+export function decodeAddressConversion(options: AddressDecodeOptions) {
+  const inputCount = [
+    options.bytes32,
+    options.phantasma,
+    options.wif,
+    options.privateKey,
+    options.mnemonic,
+    options.legacyMnemonic,
+  ].filter(Boolean).length;
 
-function isCarbonSystemAddress(bytes32: Uint8Array): boolean {
-  for (let i = 0; i < CARBON_SYSTEM_PREFIX_ZERO_BYTES; i += 1) {
-    if (bytes32[i] !== 0) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function normalizeBytes32Hex(input: string): Uint8Array {
-  const bytes = hexToBytes(input);
-  if (bytes.length !== 32) {
-    throw new Error(`bytes32 value must be 32 bytes, got ${bytes.length}`);
-  }
-  return bytes;
-}
-
-function bytes32ToPhantasmaAddress(bytes32Hex: string): AddressDecodeResult {
-  const warnings: string[] = [];
-  const bytes32 = normalizeBytes32Hex(bytes32Hex);
-  const kind = isCarbonSystemAddress(bytes32) ? 'system' : 'user';
-
-  const addressBytes = new Uint8Array(Address.LengthInBytes);
-  addressBytes[0] = kind === 'system' ? AddressKind.System : AddressKind.User;
-  addressBytes[1] = 0;
-  addressBytes.set(bytes32, 2);
-
-  const phantasma = Address.FromBytes(addressBytes).Text;
-  return {
-    decoded: {
-      direction: 'bytes32-to-pha',
-      bytes32: bytesToHex(bytes32),
-      phantasma,
-      kind,
-    },
-    warnings,
-  };
-}
-
-function phantasmaAddressToBytes32(phantasma: string): AddressDecodeResult {
-  const warnings: string[] = [];
-  const address = Address.FromText(phantasma);
-
-  if (address.Kind === AddressKind.Interop) {
-    throw new Error('interop addresses are not supported for carbon bytes32 conversion');
-  }
-
-  const kind: 'user' | 'system' = address.IsSystem ? 'system' : 'user';
-  const bytes32 = address.GetPublicKey();
-
-  return {
-    decoded: {
-      direction: 'pha-to-bytes32',
-      bytes32: bytesToHex(bytes32),
-      phantasma: address.Text,
-      kind,
-    },
-    warnings,
-  };
-}
-
-export function decodeAddressConversion(options: AddressDecodeOptions): AddressDecodeResult {
-  if (options.bytes32 && options.phantasma) {
-    throw new Error('address mode accepts only one of --bytes32 or --pha');
+  if (inputCount > 1) {
+    throw new Error('address mode accepts only one address input');
   }
 
   if (options.bytes32) {
@@ -92,5 +43,26 @@ export function decodeAddressConversion(options: AddressDecodeOptions): AddressD
     return phantasmaAddressToBytes32(options.phantasma);
   }
 
-  throw new Error('address mode requires --bytes32 <hex> or --pha <address>');
+  if (options.wif) {
+    return wifToPhantasmaAddress(options.wif);
+  }
+
+  if (options.privateKey) {
+    return privateKeyHexToPhantasmaAddress(options.privateKey);
+  }
+
+  if (options.mnemonic) {
+    return mnemonicToPhantasmaAddress(options.mnemonic, options.index ?? 0);
+  }
+
+  if (options.legacyMnemonic) {
+    return legacyMnemonicToPhantasmaAddress(
+      options.legacyMnemonic,
+      options.legacyPassword ?? ''
+    );
+  }
+
+  throw new Error(
+    'address mode requires --bytes32 <hex>, --pha <address>, --wif <wif>, --private-key <hex>, --mnemonic <words>, or --mnemonic-legacy <words>'
+  );
 }
