@@ -470,7 +470,7 @@ export function printHelp(): void {
   const text = `Usage:
   pha-decode <txHex>
   pha-decode tx --hex <txHex>
-  pha-decode tx --hash <txHash> [--rpc <url>]
+  pha-decode tx --hash <txHash> --rpc <url>
   pha-decode event --hex <eventHex> [--kind <kind>]
   pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
   pha-decode address --bytes32 <hex>
@@ -512,7 +512,7 @@ Options:
 
 Tx input notes:
   --hex accepts exact Carbon SignedTxMsg, full VM tx, or raw VM script hex
-  --hash reconstructs VM output from Carbon Phantasma wrappers when possible
+  --hash requires --rpc and reconstructs VM output from Carbon Phantasma wrappers when possible
 `;
   console.log(text);
 }

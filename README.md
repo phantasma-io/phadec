@@ -47,7 +47,7 @@ pha-decode --version
 ```bash
 pha-decode <txHex>
 pha-decode tx --hex <txHex>
-pha-decode tx --hash <txHash> [--rpc <url>]
+pha-decode tx --hash <txHash> --rpc <url>
 pha-decode event --hex <eventHex> [--kind <kind>]
 pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
 pha-decode address --bytes32 <hex>
@@ -305,6 +305,7 @@ Use `just --list` to inspect the full local helper set.
 ## Limitations
 
 - `--resolve` requires `--rpc`
+- `tx --hash` requires `--rpc`
 - if RPC `getContracts` is incomplete, unresolved methods fall back to raw data
 - unknown methods or argument types stay raw; the CLI does not guess
 - contract lifecycle summaries depend on the VM interop arguments actually containing script / ABI bytes
