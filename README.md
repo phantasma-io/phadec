@@ -25,7 +25,7 @@ CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts,
 
 ## Requirements
 
-- Node.js 18+ recommended
+- Node.js `>=22`
 
 ## Installation
 
