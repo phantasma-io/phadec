@@ -27,6 +27,14 @@ export interface CliOptions {
   abiPath?: string;
   txHash?: string;
   txHex?: string;
+  txCarbonTxData?: string;
+  txCarbonTxType?: number;
+  txRpcJson?: string;
+  txPayload?: string;
+  txExpiration?: number;
+  txGasPayer?: string;
+  txGasLimit?: string;
+  txSignatureCount?: number;
   eventHex?: string;
   eventKind?: string;
   romHex?: string;

@@ -64,6 +64,14 @@ interface CarbonVmContext {
   signatures?: number;
 }
 
+export interface CarbonTxDataDecodeContext {
+  payloadHex?: string;
+  expirationUnix?: number;
+  gasPayer?: string;
+  gasLimit?: string;
+  signatureCount?: number;
+}
+
 function normalizeOptionalHex(value: string | undefined, warnings: string[], label: string): string {
   if (!value) {
     return '';
@@ -76,6 +84,21 @@ function normalizeOptionalHex(value: string | undefined, warnings: string[], lab
       `${label} is not valid hex (${err instanceof Error ? err.message : String(err)})`
     );
     return value;
+  }
+}
+
+function normalizeOptionalHexStrict(value: string | undefined, warnings: string[], label: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return bytesToHex(hexToBytes(value));
+  } catch (err) {
+    warnings.push(
+      `${label} is not valid hex (${err instanceof Error ? err.message : String(err)})`
+    );
+    return undefined;
   }
 }
 
@@ -190,6 +213,48 @@ export function decodeTxHex(
   }
 
   output.errors.push('failed to decode as Carbon or VM');
+  return output;
+}
+
+export function decodeCarbonTxData(
+  hex: string,
+  carbonTxType: number,
+  format: OutputFormat,
+  context: CarbonTxDataDecodeContext = {},
+  methodTable?: Map<string, AbiMethodSpecEntry>,
+  protocolVersion?: number
+): DecodeOutput {
+  const output = buildBaseOutput('carbon-tx-data', hex, format);
+  let normalized: string;
+  try {
+    normalized = bytesToHex(hexToBytes(hex));
+    output.input = normalized;
+  } catch (err) {
+    output.errors.push(err instanceof Error ? err.message : String(err));
+    return output;
+  }
+
+  const payloadHex = normalizeOptionalHexStrict(context.payloadHex, output.warnings, 'RPC payload');
+  try {
+    const carbon = decodeCarbonPayloadForRpc(carbonTxType, normalized, {
+      ...(context.gasPayer ? { gasPayer: context.gasPayer } : {}),
+      ...(context.gasLimit ? { gasLimit: context.gasLimit } : {}),
+      ...(context.expirationUnix !== undefined ? { expiration: context.expirationUnix } : {}),
+      ...(payloadHex ? { payloadHex } : {}),
+    });
+    output.carbon = carbon.decoded;
+    output.warnings.push(...carbon.warnings);
+    attachVmFromCarbon(output, methodTable, protocolVersion, {
+      ...(payloadHex ? { payloadHex } : {}),
+      expirationUnix: context.expirationUnix ?? 0,
+      signatures: context.signatureCount ?? 0,
+    });
+  } catch (err) {
+    output.errors.push(
+      `Payload-only decode failed (${err instanceof Error ? err.message : String(err)})`
+    );
+  }
+
   return output;
 }
 

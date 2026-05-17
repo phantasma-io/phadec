@@ -2,6 +2,8 @@ export type OutputFormat = 'json' | 'pretty';
 export type DecodeSourceKind =
   | 'tx-hex'
   | 'tx-hash'
+  | 'carbon-tx-data'
+  | 'rpc-json'
   | 'event-hex'
   | 'rom-hex'
   | 'address-convert'

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
 import { createInterface } from 'node:readline/promises';
+import { readFile } from 'node:fs/promises';
 import { parseArgs, printHelp } from './args.js';
-import { decodeTxHex, decodeTxHash } from '../decoders/tx.js';
+import { decodeCarbonTxData, decodeTxDataFromRpc, decodeTxHex, decodeTxHash } from '../decoders/tx.js';
 import { decodeEventHex } from '../decoders/event.js';
 import { decodeRomHex } from '../decoders/rom.js';
 import { decodeAddressConversion } from '../decoders/address.js';
@@ -21,6 +22,7 @@ import type {
 } from '../types/cli.js';
 import type { AddressDecodeOptions } from '../decoders/address.js';
 import { bytesToHex, hexToBytes, setLogger } from 'phantasma-sdk-ts';
+import type { TransactionData } from 'phantasma-sdk-ts';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../../package.json') as { version: string };
@@ -64,6 +66,15 @@ function applyCarbonDetail(output: DecodeOutput, mode: CarbonDetailMode): void {
     delete carbon.call;
     delete carbon.calls;
   }
+}
+
+function applyTxOutputOptions(output: DecodeOutput, opts: CliOptions): DecodeOutput {
+  output.warnings.push(
+    ...applyCarbonAddressMode(output, opts.carbonAddresses)
+  );
+  applyVmDetail(output, opts.vmDetail);
+  applyCarbonDetail(output, opts.carbonDetail);
+  return output;
 }
 
 function isSecretAddressKind(kind: AddressInputKind | undefined): boolean {
@@ -126,6 +137,64 @@ async function readStdinText(
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+async function readRawStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function readRpcJsonInput(input: string): Promise<{ label: string; text: string }> {
+  if (input === '-') {
+    return { label: '<stdin>', text: await readRawStdin() };
+  }
+  return { label: input, text: await readFile(input, 'utf8') };
+}
+
+function asRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function normalizeRpcTransactionJson(value: unknown): TransactionData {
+  const root = asRecord(value, 'RPC JSON');
+  if (root.error !== undefined) {
+    throw new Error(`RPC JSON contains error: ${JSON.stringify(root.error)}`);
+  }
+  const maybeResult = root.result;
+  const txRecord =
+    maybeResult && typeof maybeResult === 'object' && !Array.isArray(maybeResult)
+      ? asRecord(maybeResult, 'RPC JSON result')
+      : root;
+  return {
+    hash: '',
+    chainAddress: '',
+    timestamp: 0,
+    blockHeight: 0,
+    blockHash: '',
+    script: '',
+    payload: '',
+    carbonTxType: 0,
+    carbonTxData: '',
+    events: [],
+    result: '',
+    debugComment: '',
+    fee: '0',
+    state: '',
+    signatures: [],
+    sender: '',
+    gasPayer: '',
+    gasTarget: '',
+    gasPrice: '0',
+    gasLimit: '0',
+    expiration: 0,
+    ...txRecord,
+  } as TransactionData;
 }
 
 function buildAddressDecodeOptions(
@@ -437,17 +506,69 @@ async function run(): Promise<void> {
   }
 
   if (opts.txHex) {
-    const output = decodeTxHex(
-      opts.txHex,
-      opts.format,
-      methodTable,
-      opts.protocolVersion
+    const output = applyTxOutputOptions(
+      decodeTxHex(
+        opts.txHex,
+        opts.format,
+        methodTable,
+        opts.protocolVersion
+      ),
+      opts
     );
-    output.warnings.push(
-      ...applyCarbonAddressMode(output, opts.carbonAddresses)
+    output.warnings.push(...preWarnings);
+    console.log(renderOutput(output));
+    return;
+  }
+
+  if (opts.txCarbonTxData) {
+    const output = applyTxOutputOptions(
+      decodeCarbonTxData(
+        opts.txCarbonTxData,
+        opts.txCarbonTxType ?? 0,
+        opts.format,
+        {
+          ...(opts.txPayload ? { payloadHex: opts.txPayload } : {}),
+          ...(opts.txExpiration !== undefined ? { expirationUnix: opts.txExpiration } : {}),
+          ...(opts.txGasPayer ? { gasPayer: opts.txGasPayer } : {}),
+          ...(opts.txGasLimit ? { gasLimit: opts.txGasLimit } : {}),
+          ...(opts.txSignatureCount !== undefined ? { signatureCount: opts.txSignatureCount } : {}),
+        },
+        methodTable,
+        opts.protocolVersion
+      ),
+      opts
     );
-    applyVmDetail(output, opts.vmDetail);
-    applyCarbonDetail(output, opts.carbonDetail);
+    output.warnings.push(...preWarnings);
+    console.log(renderOutput(output));
+    return;
+  }
+
+  if (opts.txRpcJson) {
+    let output: DecodeOutput;
+    try {
+      const input = await readRpcJsonInput(opts.txRpcJson);
+      const tx = normalizeRpcTransactionJson(JSON.parse(input.text));
+      output = decodeTxDataFromRpc(
+        tx.hash || '<rpc-json>',
+        '',
+        tx,
+        opts.format,
+        methodTable,
+        opts.protocolVersion
+      );
+      output.source = 'rpc-json';
+      output.input = input.label;
+      delete output.rpc;
+      applyTxOutputOptions(output, opts);
+    } catch (err) {
+      output = {
+        source: 'rpc-json',
+        input: opts.txRpcJson,
+        format: opts.format,
+        warnings: [],
+        errors: [err instanceof Error ? err.message : String(err)],
+      };
+    }
     output.warnings.push(...preWarnings);
     console.log(renderOutput(output));
     return;
@@ -459,18 +580,16 @@ async function run(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const output = await decodeTxHash(
-      opts.txHash,
-      opts.rpcUrl,
-      opts.format,
-      methodTable,
-      opts.protocolVersion
+    const output = applyTxOutputOptions(
+      await decodeTxHash(
+        opts.txHash,
+        opts.rpcUrl,
+        opts.format,
+        methodTable,
+        opts.protocolVersion
+      ),
+      opts
     );
-    output.warnings.push(
-      ...applyCarbonAddressMode(output, opts.carbonAddresses)
-    );
-    applyVmDetail(output, opts.vmDetail);
-    applyCarbonDetail(output, opts.carbonDetail);
     output.warnings.push(...preWarnings);
     console.log(renderOutput(output));
     return;

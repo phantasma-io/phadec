@@ -4,7 +4,7 @@ CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts,
 
 ## Features
 
-- Decode Carbon transaction hex or fetch-and-decode by tx hash
+- Decode Carbon transaction hex, payload-only RPC `carbonTxData`, RPC JSON dumps, or fetch-and-decode by tx hash
 - Decode Carbon `Phantasma` / `Phantasma_Raw` wrappers into a VM view
 - Decode full VM transaction containers and disassemble raw VM scripts
 - Decode VM interop calls with ABI-aware argument naming
@@ -48,6 +48,8 @@ pha-decode --version
 pha-decode <txHex>
 pha-decode tx --hex <txHex>
 pha-decode tx --hash <txHash> --rpc <url>
+pha-decode tx --carbon-tx-data <hex> --carbon-tx-type <number|name>
+pha-decode tx --rpc-json <path|->
 pha-decode event --hex <eventHex> [--kind <kind>]
 pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
 pha-decode address --bytes32 <hex>
@@ -67,6 +69,9 @@ printf '%s' "<secret>" | pha-decode address --stdin --wif
 - `--carbon-addresses <bytes32|pha>`: render known Carbon addresses as raw `bytes32` or decoded Phantasma addresses, default `bytes32`
 - `--protocol <number>`: protocol version used for built-in interop ABI selection, default latest known protocol
 - `--rpc <url>`: RPC endpoint for `--hash`
+- `--carbon-tx-data <hex>`: payload-only RPC `carbonTxData`; requires `--carbon-tx-type`
+- `--carbon-tx-type <number|name>`: Carbon tx type number or enum name for `--carbon-tx-data`, e.g. `15` or `Phantasma`
+- `--rpc-json <path|->`: decode a raw `getTransaction` result object or JSON-RPC response; `-` reads stdin
 - `--resolve`: fetch contract metadata from RPC and merge it into method resolution
 - `--abi <path>`: ABI JSON file or directory to merge into method resolution
 - `--verbose`: enable SDK logging
@@ -75,6 +80,12 @@ printf '%s' "<secret>" | pha-decode address --stdin --wif
 
 Mode-specific flags:
 
+- tx mode
+  - `--payload <hex>` optional RPC payload context for `--carbon-tx-data`
+  - `--expiration <unix>` optional RPC expiration seconds context for `--carbon-tx-data`
+  - `--gas-payer <address>` optional RPC gas payer context for `--carbon-tx-data`
+  - `--gas-limit <amount>` optional RPC gas limit context for `--carbon-tx-data`
+  - `--signature-count <n>` optional signature count context for `--carbon-tx-data`
 - event mode
   - `--kind <eventKind>`
 - ROM mode
@@ -101,7 +112,23 @@ Mode-specific flags:
 - a full VM transaction hex string
 - a raw VM script hex string
 
-It does not accept payload-only RPC fields such as `carbonTxData`. If you only have a tx hash or an RPC response, use:
+Payload-only RPC `carbonTxData` is not self-describing, so it is intentionally
+not auto-detected by `--hex`. Use an explicit type-aware mode instead:
+
+```bash
+pha-decode tx --carbon-tx-data <carbonTxData> --carbon-tx-type <carbonTxType>
+```
+
+When you have the whole `getTransaction` response, prefer `--rpc-json` so the
+decoder can also use payload, expiration, gas, signature, and fallback script
+context:
+
+```bash
+pha-decode tx --rpc-json tx.json
+curl ... | pha-decode tx --rpc-json -
+```
+
+If you only have a tx hash and a live RPC, use:
 
 ```bash
 pha-decode tx --hash <txHash> --rpc <url>
@@ -112,7 +139,9 @@ When the decoded Carbon transaction carries VM execution data, `pha-decode` reco
 - `TxTypes.Phantasma` (`type 15`): reconstructs VM metadata from the Carbon envelope and disassembles `msg.script`
 - `TxTypes.Phantasma_Raw` (`type 16`): unwraps and decodes the inner full VM transaction
 
-For `tx --hash`, `pha-decode` first tries `carbonTxData`. If RPC also exposes a top-level `script`, that script is used as a fallback when full VM reconstruction is not possible.
+For `tx --hash` and `tx --rpc-json`, `pha-decode` first tries `carbonTxData`.
+If RPC also exposes a top-level `script`, that script is used as a fallback
+when full VM reconstruction is not possible.
 
 ## Contract Lifecycle Decoding
 
@@ -151,6 +180,26 @@ pha-decode tx --hash 155422A6882C3342933521DDC1A335292BF6448DBD489ED0BE21CFC74AF
   --carbon-addresses pha \
   --vm-detail calls \
   --carbon-detail call
+```
+
+Decode a copied RPC `carbonTxData` field directly:
+
+```bash
+pha-decode tx \
+  --carbon-tx-data <carbonTxData> \
+  --carbon-tx-type Phantasma \
+  --payload <payloadHex> \
+  --expiration <unixSeconds> \
+  --vm-detail calls \
+  --carbon-detail all \
+  --format json
+```
+
+Decode a saved RPC transaction object:
+
+```bash
+pha-decode tx --rpc-json tx.json --vm-detail calls --format json
+cat tx.json | pha-decode tx --rpc-json - --carbon-addresses pha
 ```
 
 Decode a local Carbon tx, full VM tx, or raw VM script:
@@ -306,6 +355,7 @@ Use `just --list` to inspect the full local helper set.
 
 - `--resolve` requires `--rpc`
 - `tx --hash` requires `--rpc`
+- `tx --carbon-tx-data` requires `--carbon-tx-type`; use `--rpc-json` when you have the full RPC object
 - if RPC `getContracts` is incomplete, unresolved methods fall back to raw data
 - unknown methods or argument types stay raw; the CLI does not guess
 - contract lifecycle summaries depend on the VM interop arguments actually containing script / ABI bytes

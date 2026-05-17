@@ -9,7 +9,7 @@ import type {
   AddressInputKind,
 } from '../types/cli.js';
 import type { OutputFormat } from '../types/decoded.js';
-import { DomainSettings } from 'phantasma-sdk-ts';
+import { DomainSettings, TxTypes } from 'phantasma-sdk-ts';
 
 const DEFAULT_FORMAT: OutputFormat = 'pretty';
 const DEFAULT_VM_DETAIL: VmDetailMode = 'all';
@@ -90,6 +90,37 @@ function parseProtocol(value: string): number | null {
   return parsed;
 }
 
+function parseBoundedInteger(value: string, max: number): number | null {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > max) {
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeEnumName(value: string): string {
+  return value.replace(/[-_\s]/g, '').toLowerCase();
+}
+
+function parseCarbonTxType(value: string): number | null {
+  const numeric = parseBoundedInteger(value, 0xff);
+  if (numeric !== null) {
+    return numeric;
+  }
+
+  const normalized = normalizeEnumName(value);
+  for (const [key, enumValue] of Object.entries(TxTypes)) {
+    if (typeof enumValue !== 'number') {
+      continue;
+    }
+    if (normalizeEnumName(key) === normalized) {
+      return enumValue;
+    }
+  }
+
+  return null;
+}
+
 function parseAddressIndex(value: string): number | null {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 0x7fffffff) {
@@ -165,6 +196,57 @@ function setFlagValue(
     case 'tx':
       opts.txHash = value;
       return null;
+    case 'carbon-tx-data':
+    case 'carbonTxData':
+    case 'carbon-data':
+      opts.txCarbonTxData = value;
+      return null;
+    case 'carbon-tx-type':
+    case 'carbonTxType':
+    case 'carbon-type': {
+      const carbonTxType = parseCarbonTxType(value);
+      if (carbonTxType === null) {
+        return `invalid carbon tx type: ${value}`;
+      }
+      opts.txCarbonTxType = carbonTxType;
+      return null;
+    }
+    case 'rpc-json':
+    case 'rpcJson':
+      opts.txRpcJson = value;
+      return null;
+    case 'payload':
+    case 'rpc-payload':
+      opts.txPayload = value;
+      return null;
+    case 'expiration':
+    case 'expiry':
+    case 'rpc-expiration': {
+      const expiration = parseBoundedInteger(value, Number.MAX_SAFE_INTEGER);
+      if (expiration === null) {
+        return `invalid expiration: ${value}`;
+      }
+      opts.txExpiration = expiration;
+      return null;
+    }
+    case 'gas-payer':
+    case 'gasPayer':
+      opts.txGasPayer = value;
+      return null;
+    case 'gas-limit':
+    case 'gasLimit':
+      opts.txGasLimit = value;
+      return null;
+    case 'signature-count':
+    case 'signatures':
+    case 'signatureCount': {
+      const signatureCount = parseBoundedInteger(value, 10000);
+      if (signatureCount === null) {
+        return `invalid signature count: ${value}`;
+      }
+      opts.txSignatureCount = signatureCount;
+      return null;
+    }
     case 'hex':
       if (opts.command === 'event') {
         opts.eventHex = value;
@@ -288,11 +370,33 @@ function validateOptions(opts: CliOptions): string | null {
   }
 
   if (opts.command === 'tx') {
-    if (!opts.txHex && !opts.txHash) {
-      return 'tx mode requires --hex <txHex> or --hash <txHash>';
+    const inputCount = [
+      opts.txHex,
+      opts.txHash,
+      opts.txCarbonTxData,
+      opts.txRpcJson,
+    ].filter(Boolean).length;
+    if (inputCount === 0) {
+      return 'tx mode requires --hex <txHex>, --hash <txHash>, --carbon-tx-data <hex>, or --rpc-json <path|->';
     }
-    if (opts.txHex && opts.txHash) {
-      return 'use only one of --hex or --hash';
+    if (inputCount > 1) {
+      return 'use only one tx input: --hex, --hash, --carbon-tx-data, or --rpc-json';
+    }
+    if (opts.txCarbonTxData && opts.txCarbonTxType === undefined) {
+      return 'tx mode with --carbon-tx-data requires --carbon-tx-type <number|name>';
+    }
+    if (!opts.txCarbonTxData && opts.txCarbonTxType !== undefined) {
+      return '--carbon-tx-type is only valid with --carbon-tx-data';
+    }
+    const hasCarbonContext = Boolean(
+      opts.txPayload ||
+        opts.txExpiration !== undefined ||
+        opts.txGasPayer ||
+        opts.txGasLimit ||
+        opts.txSignatureCount !== undefined
+    );
+    if (hasCarbonContext && !opts.txCarbonTxData) {
+      return '--payload, --expiration, --gas-payer, --gas-limit, and --signature-count are only valid with --carbon-tx-data';
     }
   } else if (opts.command === 'event') {
     if (!opts.eventHex) {
@@ -471,6 +575,8 @@ export function printHelp(): void {
   pha-decode <txHex>
   pha-decode tx --hex <txHex>
   pha-decode tx --hash <txHash> --rpc <url>
+  pha-decode tx --carbon-tx-data <hex> --carbon-tx-type <number|name>
+  pha-decode tx --rpc-json <path|->
   pha-decode event --hex <eventHex> [--kind <kind>]
   pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
   pha-decode address --bytes32 <hex>
@@ -488,6 +594,14 @@ Options:
   --carbon-addresses <m>  Carbon address output: bytes32|pha (default: bytes32)
   --protocol <number>     Protocol version for interop ABI selection (default: latest)
   --rpc <url>             RPC endpoint for --hash
+  --carbon-tx-data <hex>  RPC carbonTxData payload-only field (requires --carbon-tx-type)
+  --carbon-tx-type <t>    Carbon tx type number or enum name for --carbon-tx-data
+  --rpc-json <path|->     Decode a getTransaction JSON object or JSON-RPC response; "-" reads stdin
+  --payload <hex>         Optional RPC payload hex context for --carbon-tx-data
+  --expiration <unix>     Optional RPC expiration seconds context for --carbon-tx-data
+  --gas-payer <address>   Optional RPC gasPayer context for --carbon-tx-data
+  --gas-limit <amount>    Optional RPC gasLimit context for --carbon-tx-data
+  --signature-count <n>   Optional signature count context for --carbon-tx-data VM view
   --resolve               Enable extra RPC-based resolution
   --verbose               Enable SDK logging
   --version               Show version number
@@ -513,6 +627,8 @@ Options:
 Tx input notes:
   --hex accepts exact Carbon SignedTxMsg, full VM tx, or raw VM script hex
   --hash requires --rpc and reconstructs VM output from Carbon Phantasma wrappers when possible
+  --carbon-tx-data decodes payload-only RPC carbonTxData and needs the matching carbonTxType
+  --rpc-json accepts either a raw getTransaction result object or a JSON-RPC envelope with result
 `;
   console.log(text);
 }

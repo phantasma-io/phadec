@@ -17,7 +17,7 @@ import {
 } from 'phantasma-sdk-ts';
 import type { TransactionData } from 'phantasma-sdk-ts';
 import { buildBuiltinMethodTable } from '../src/abi/builtin/index.js';
-import { decodeTxDataFromRpc, decodeTxHex } from '../src/decoders/tx.js';
+import { decodeCarbonTxData, decodeTxDataFromRpc, decodeTxHex } from '../src/decoders/tx.js';
 
 const TEST_WIF = 'L5UEVHBjujaR1721aZM5Zm5ayjDyamMZS9W35RE9Y9giRkdf3dVx';
 const VM_NEXUS = 'simnet';
@@ -213,6 +213,32 @@ test('decodeTxDataFromRpc reconstructs type 15 VM output from carbonTxData when 
   assert.equal(output.warnings.includes('RPC does not expose full VM tx bytes; output is script/payload only'), false);
 });
 
+test('decodeCarbonTxData decodes payload-only type 15 carbonTxData directly', () => {
+  const scriptHex = buildVmScriptHex();
+  const output = decodeCarbonTxData(
+    buildRpcPhantasmaPayloadHex(scriptHex),
+    TxTypes.Phantasma,
+    'json',
+    {
+      payloadHex: bytesToHex(new TextEncoder().encode(CARBON_PAYLOAD_TEXT)),
+      expirationUnix: RPC_EXPIRATION_UNIX,
+      signatureCount: 2,
+    },
+    METHOD_TABLE,
+    16
+  );
+
+  assert.equal(output.source, 'carbon-tx-data');
+  assert.equal(output.carbon?.typeName, 'Phantasma');
+  assert.equal(output.vm?.nexus, VM_NEXUS);
+  assert.equal(output.vm?.chain, VM_CHAIN);
+  assert.equal(output.vm?.scriptHex, normalizeHex(scriptHex));
+  assert.equal(output.vm?.payloadHex, bytesToHex(new TextEncoder().encode(CARBON_PAYLOAD_TEXT)));
+  assert.equal(output.vm?.expirationUnix, RPC_EXPIRATION_UNIX);
+  assert.equal(output.vm?.signatures, 2);
+  assert.deepEqual(expectVmMethods(output), ['AllowGas', 'stake.Stake', 'SpendGas']);
+});
+
 test('decodeTxDataFromRpc reconstructs type 16 VM output from carbonTxData', () => {
   const scriptHex = buildVmScriptHex();
   const output = decodeTxDataFromRpc(
@@ -229,6 +255,26 @@ test('decodeTxDataFromRpc reconstructs type 16 VM output from carbonTxData', () 
     16
   );
 
+  assert.equal(output.carbon?.typeName, 'Phantasma_Raw');
+  assert.equal(output.vm?.nexus, VM_NEXUS);
+  assert.equal(output.vm?.chain, VM_CHAIN);
+  assert.equal(output.vm?.scriptHex, normalizeHex(scriptHex));
+  assert.equal(output.vm?.payloadHex, VM_PAYLOAD_HEX);
+  assert.deepEqual(expectVmMethods(output), ['AllowGas', 'stake.Stake', 'SpendGas']);
+});
+
+test('decodeCarbonTxData decodes payload-only type 16 carbonTxData directly', () => {
+  const scriptHex = buildVmScriptHex();
+  const output = decodeCarbonTxData(
+    buildRpcPhantasmaRawPayloadHex(scriptHex),
+    TxTypes.Phantasma_Raw,
+    'json',
+    {},
+    METHOD_TABLE,
+    16
+  );
+
+  assert.equal(output.source, 'carbon-tx-data');
   assert.equal(output.carbon?.typeName, 'Phantasma_Raw');
   assert.equal(output.vm?.nexus, VM_NEXUS);
   assert.equal(output.vm?.chain, VM_CHAIN);
