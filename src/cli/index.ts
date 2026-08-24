@@ -6,6 +6,7 @@ import { parseArgs, printHelp } from './args.js';
 import { decodeCarbonTxData, decodeTxDataFromRpc, decodeTxHex, decodeTxHash } from '../decoders/tx.js';
 import { decodeEventHex } from '../decoders/event.js';
 import { decodeRomHex } from '../decoders/rom.js';
+import { decodeVmObjectHex } from '../decoders/vm-object.js';
 import { decodeAddressConversion } from '../decoders/address.js';
 import { applyCarbonAddressMode } from '../decoders/carbon-addresses.js';
 import { renderOutput } from '../output/render.js';
@@ -311,6 +312,28 @@ async function run(): Promise<void> {
     if (opts.eventKind) {
       preWarnings.push('--kind is ignored for rom mode');
     }
+  } else if (opts.command === 'vmobj') {
+    if (opts.abiPath) {
+      preWarnings.push('--abi is ignored for vmobj mode');
+    }
+    if (opts.resolve) {
+      preWarnings.push('--resolve is ignored for vmobj mode');
+    }
+    if (opts.vmDetail !== 'all') {
+      preWarnings.push('--vm-detail is ignored for vmobj mode');
+    }
+    if (opts.carbonDetail !== 'call') {
+      preWarnings.push('--carbon-detail is ignored for vmobj mode');
+    }
+    if (opts.carbonAddresses !== 'bytes32') {
+      preWarnings.push('--carbon-addresses is ignored for vmobj mode');
+    }
+    if (opts.rpcUrl) {
+      preWarnings.push('--rpc is ignored for vmobj mode');
+    }
+    if (opts.eventKind) {
+      preWarnings.push('--kind is ignored for vmobj mode');
+    }
   } else if (opts.command === 'address') {
     if (opts.abiPath) {
       preWarnings.push('--abi is ignored for address mode');
@@ -454,6 +477,32 @@ async function run(): Promise<void> {
       const rendered = renderOutput({
         source: 'rom-hex',
         input: opts.romHex ?? '',
+        format: opts.format,
+        warnings: preWarnings,
+        errors: [err instanceof Error ? err.message : String(err)],
+      });
+      console.log(rendered);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (opts.command === 'vmobj') {
+    try {
+      const decoded = decodeVmObjectHex(opts.vmObjectHex ?? '');
+      const rendered = renderOutput({
+        source: 'vmobj-hex',
+        input: decoded.rawHex,
+        format: opts.format,
+        vmObject: decoded.decoded,
+        warnings: [...preWarnings, ...decoded.warnings],
+        errors: [],
+      });
+      console.log(rendered);
+    } catch (err) {
+      const rendered = renderOutput({
+        source: 'vmobj-hex',
+        input: opts.vmObjectHex ?? '',
         format: opts.format,
         warnings: preWarnings,
         errors: [err instanceof Error ? err.message : String(err)],

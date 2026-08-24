@@ -6,6 +6,7 @@ export type DecodeSourceKind =
   | 'rpc-json'
   | 'event-hex'
   | 'rom-hex'
+  | 'vmobj-hex'
   | 'address-convert'
   | 'address-derive';
 
@@ -99,20 +100,23 @@ export interface EventDecoded {
   decoded?: JsonValue;
 }
 
-export interface RomVmStructEntryDecoded {
+export interface VmObjectStructEntryDecoded {
   keyVmType: string;
   key: JsonValue;
   valueVmType: string;
   value: JsonValue;
 }
 
-export interface RomVmNodeDecoded {
+export interface VmObjectDecoded {
   vmTypeId: number;
   vmType: string;
   value?: JsonValue;
   fields?: { [key: string]: JsonValue };
-  entries?: RomVmStructEntryDecoded[];
+  entries?: VmObjectStructEntryDecoded[];
 }
+
+export type RomVmStructEntryDecoded = VmObjectStructEntryDecoded;
+export type RomVmNodeDecoded = VmObjectDecoded;
 
 export interface RomDecoded {
   parser: 'legacy-vm-dictionary' | 'crown';
@@ -163,6 +167,7 @@ export interface DecodeOutput {
   vm?: VmDecoded;
   event?: EventDecoded;
   rom?: RomDecoded;
+  vmObject?: VmObjectDecoded;
   address?: AddressDecoded;
   warnings: string[];
   errors: string[];

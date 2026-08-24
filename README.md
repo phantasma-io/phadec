@@ -1,6 +1,6 @@
 # pha-decode
 
-CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts, event hex payloads, ROM blobs, and address conversions.
+CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts, event hex payloads, ROM blobs, serialized VM objects, and address conversions.
 
 ## Features
 
@@ -15,6 +15,7 @@ CLI for decoding Phantasma Carbon + VM transactions, contract lifecycle scripts,
   - ABI byte length + SHA-256
   - ABI method/event summaries when ABI bytes are present
 - Decode classic hex-encoded event payloads
+- Decode serialized VMObject hex (RPC `InvokeRawScript` `result`)
 - Decode ROM blobs in:
   - legacy/common VM dictionary format
   - dedicated `CROWN` format
@@ -52,6 +53,8 @@ pha-decode tx --carbon-tx-data <hex> --carbon-tx-type <number|name>
 pha-decode tx --rpc-json <path|->
 pha-decode event --hex <eventHex> [--kind <kind>]
 pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
+pha-decode vmobj --hex <vmObjectHex>
+pha-decode vmobj <vmObjectHex>
 pha-decode address --bytes32 <hex>
 pha-decode address --pha <address>
 pha-decode address --wif <wif>
@@ -235,6 +238,13 @@ Force the legacy/common ROM parser:
 pha-decode rom --hex 0x... --rom-format legacy
 ```
 
+Decode serialized VMObject hex from `InvokeRawScript.result` (not a VM script):
+
+```bash
+pha-decode vmobj --hex 03010B
+pha-decode vmobj 0x03010B --format json
+```
+
 Convert Carbon `bytes32` to a Phantasma address:
 
 ```bash
@@ -324,6 +334,7 @@ JSON output is stable and machine-friendly:
   "vm": { "...": "..." },
   "event": { "...": "..." },
   "rom": { "...": "..." },
+  "vmObject": { "...": "..." },
   "address": { "...": "..." },
   "warnings": [],
   "errors": []
@@ -337,6 +348,7 @@ Notes:
 - `vm.instructions` and `vm.methodCalls` are controlled by `--vm-detail`
 - `--carbon-addresses pha` only converts known address-shaped Carbon fields
 - event hex decoding applies to classic event payloads only
+- `vmobj` decodes one serialized VMObject. Use `result` from InvokeRawScript, not the script you invoked. If `results[]` has several items, decode each hex separately.
 - ROM auto mode chooses a parser from the available context and falls back with warnings when needed
 - address derivation from WIF/private-key/mnemonic/legacy mnemonic never prints the secret input back into `input`
 

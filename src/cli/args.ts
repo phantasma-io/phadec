@@ -24,6 +24,7 @@ function isCommand(value: string): value is CliCommand {
     value === 'tx' ||
     value === 'event' ||
     value === 'rom' ||
+    value === 'vmobj' ||
     value === 'address'
   );
 }
@@ -252,6 +253,8 @@ function setFlagValue(
         opts.eventHex = value;
       } else if (opts.command === 'rom') {
         opts.romHex = value;
+      } else if (opts.command === 'vmobj') {
+        opts.vmObjectHex = value;
       } else {
         opts.txHex = value;
       }
@@ -406,6 +409,10 @@ function validateOptions(opts: CliOptions): string | null {
     if (!opts.romHex) {
       return 'rom mode requires --hex <romHex>';
     }
+  } else if (opts.command === 'vmobj') {
+    if (!opts.vmObjectHex) {
+      return 'vmobj mode requires --hex <vmObjectHex>';
+    }
   } else if (opts.command === 'address') {
     const valueInputCount = [
       opts.addressBytes32,
@@ -525,6 +532,14 @@ export function parseArgs(argv: string[]): ParseResult {
     }
 
     if (!token.startsWith('--')) {
+      if (opts.command === 'vmobj') {
+        if (opts.vmObjectHex) {
+          return { kind: 'error', message: 'vmobj mode accepts only one hex input' };
+        }
+        opts.vmObjectHex = token;
+        index += 1;
+        continue;
+      }
       return { kind: 'error', message: `unexpected argument: ${token}` };
     }
 
@@ -579,6 +594,8 @@ export function printHelp(): void {
   pha-decode tx --rpc-json <path|->
   pha-decode event --hex <eventHex> [--kind <kind>]
   pha-decode rom --hex <romHex> [--symbol <symbol>] [--token-id <tokenId>] [--rom-format <mode>]
+  pha-decode vmobj --hex <vmObjectHex>
+  pha-decode vmobj <vmObjectHex>
   pha-decode address --bytes32 <hex>
   pha-decode address --pha <address>
   pha-decode address --wif <wif>
@@ -626,6 +643,7 @@ Options:
 
 Tx input notes:
   --hex accepts exact Carbon SignedTxMsg, full VM tx, or raw VM script hex
+  vmobj --hex decodes one serialized VMObject (InvokeRawScript result), not a script
   --hash requires --rpc and reconstructs VM output from Carbon Phantasma wrappers when possible
   --carbon-tx-data decodes payload-only RPC carbonTxData and needs the matching carbonTxType
   --rpc-json accepts either a raw getTransaction result object or a JSON-RPC envelope with result
